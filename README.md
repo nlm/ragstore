@@ -1,41 +1,41 @@
 # ragstore
 
-Moteur de recherche documentaire headless pour agents LLM. Binaire Linux unique, sans dépendances, sans daemon — il s'indexe et se cherche en une seule commande.
+Headless document search engine for LLM agents. A single Linux binary, no dependencies, no daemon — index and search in one command.
 
-## Pourquoi ragstore
+## Why ragstore
 
-Les agents LLM ont besoin d'accéder à une base documentaire sans gérer d'infrastructure. `ragstore` est conçu pour tourner dans le même container que l'agent : un seul binaire à appeler, un seul fichier d'index sur disque, une sortie JSON propre à consommer directement.
+LLM agents need access to a document knowledge base without managing infrastructure. `ragstore` is designed to run in the same container as the agent: one binary to call, one index file on disk, clean JSON output ready to consume.
 
-La recherche repose sur **BM25** (Okapi BM25), l'algorithme de ranking utilisé par Elasticsearch et Lucene. C'est le meilleur choix pour un environnement isolé : aucun appel réseau, aucun modèle d'embedding à charger, latence sub-milliseconde, et d'excellents résultats sur du vocabulaire technique et métier.
+Search is powered by **BM25** (Okapi BM25), the ranking algorithm used by Elasticsearch and Lucene. It's the best fit for an isolated environment: no network calls, no embedding model to load, sub-millisecond latency, and excellent results on technical and domain-specific vocabulary.
 
 ---
 
 ## Installation
 
 ```bash
-# Télécharger le binaire (Linux x86_64)
+# Download the binary (Linux x86_64)
 curl -Lo ragstore https://your-host/ragstore
 chmod +x ragstore
 
-# Ou compiler depuis les sources (Go 1.22+)
+# Or build from source (Go 1.22+)
 go build -o ragstore -ldflags="-s -w" .
 ```
 
-Le binaire est statique, auto-contenu, 2 Mo. Aucune dépendance système requise.
+The binary is static, self-contained, 2 MB. No system dependencies required.
 
 ---
 
-## Démarrage rapide
+## Quick start
 
 ```bash
-# Indexer un répertoire de documents
+# Index a document directory
 RAG_DB=/data/rag.db.json ./ragstore index /data/docs --chunk-size 250
 
-# Chercher par topic
-RAG_DB=/data/rag.db.json ./ragstore search "machine learning réseaux de neurones" --top 5
+# Search by topic
+RAG_DB=/data/rag.db.json ./ragstore search "machine learning neural networks" --top 5
 ```
 
-Sortie :
+Output:
 
 ```json
 {
@@ -47,7 +47,7 @@ Sortie :
       "title": "ml_intro.md",
       "chunk": 0,
       "score": 5.571,
-      "snippet": "…L'apprentissage supervisé utilise des données labellisées pour entraîner des modèles de classification et de régression. L'apprentissage non supervisé découvre des patterns cachés…"
+      "snippet": "…Supervised learning uses labelled data to train classification and regression models. Unsupervised learning discovers hidden patterns in unlabelled data…"
     }
   ]
 }
@@ -55,52 +55,52 @@ Sortie :
 
 ---
 
-## Référence des commandes
+## Command reference
 
 ### `index <path> [--chunk-size N]`
 
-Indexe un fichier ou un répertoire (récursif). Les fichiers déjà présents dans l'index sont ignorés — la commande est **idempotente**.
+Index a file or directory (recursive). Files already present in the index are skipped — the command is **idempotent**.
 
 ```bash
-ragstore index /data/docs                    # chunk par défaut : 300 mots
-ragstore index /data/docs --chunk-size 150   # chunks plus précis
-ragstore index /data/docs /data/extra        # plusieurs chemins
+ragstore index /data/docs                    # default chunk size: 300 words
+ragstore index /data/docs --chunk-size 150   # finer-grained chunks
+ragstore index /data/docs /data/extra        # multiple paths
 ```
 
-Formats supportés : `.txt`, `.md`, `.rst`, `.org`, `.json`, `.yaml`, `.csv`, `.html`, `.py`, `.go`, `.js`, `.ts`, `.java`, `.c`, `.cpp`, `.rs`, `.sh`, et tout fichier texte. PDF supporté si `pdftotext` est installé (`apt install poppler-utils`).
+Supported formats: `.txt`, `.md`, `.rst`, `.org`, `.json`, `.yaml`, `.csv`, `.html`, `.py`, `.go`, `.js`, `.ts`, `.java`, `.c`, `.cpp`, `.rs`, `.sh`, and any readable text file. PDF is supported if `pdftotext` is installed (`apt install poppler-utils`).
 
-Le chunking se fait par **paragraphes** jusqu'à atteindre la taille cible — les chunks respectent les coupures naturelles du texte.
+Chunking splits text by **paragraphs** until the target word count is reached — chunks always break on natural boundaries.
 
-| `--chunk-size` | Usage recommandé |
+| `--chunk-size` | Recommended use |
 |---|---|
-| 100–150 | Documents techniques denses, précision maximale |
-| 200–300 | Q&A généraliste *(défaut recommandé)* |
-| 400–500 | Contexte large, documents narratifs |
+| 100–150 | Dense technical docs, maximum precision |
+| 200–300 | General Q&A *(recommended default)* |
+| 400–500 | Wide context, narrative documents |
 
 ### `search <query> [--top N]`
 
-Recherche dans l'index et retourne les chunks les plus pertinents, triés par score BM25 décroissant.
+Search the index and return the most relevant chunks, ranked by descending BM25 score.
 
 ```bash
 ragstore search "docker kubernetes orchestration" --top 5
-ragstore search "politique de remboursement" --top 3
+ragstore search "refund policy terms" --top 3
 ```
 
-Le champ `snippet` contient l'extrait le plus pertinent du chunk, centré sur les termes de la requête. Il est directement utilisable pour formuler une réponse.
+The `snippet` field contains the most relevant excerpt from the chunk, centered around the query terms. It can be used directly to formulate an answer.
 
 ### `get <id>`
 
-Retourne le contenu complet d'un chunk à partir de son identifiant (obtenu via `search`).
+Return the full content of a chunk by its ID (obtained from `search`).
 
 ```bash
 ragstore get 211ccacbd4cf3c78
 ```
 
-Utile quand le snippet est tronqué et que davantage de contexte est nécessaire.
+Useful when a snippet is truncated and more context is needed.
 
 ### `list`
 
-Liste tous les documents indexés avec leur chemin, titre, numéro de chunk et nombre de mots.
+List all indexed documents with their path, title, chunk number, and word count.
 
 ```bash
 ragstore list
@@ -108,17 +108,17 @@ ragstore list
 
 ### `delete <id|path>`
 
-Supprime un ou plusieurs chunks par identifiant ou par préfixe de chemin.
+Delete one or more chunks by ID or path prefix.
 
 ```bash
-ragstore delete 211ccacbd4cf3c78          # un chunk précis
-ragstore delete /data/docs/ancien.md      # tous les chunks d'un fichier
-ragstore delete /data/docs/archive/       # tous les chunks d'un répertoire
+ragstore delete 211ccacbd4cf3c78        # a single chunk
+ragstore delete /data/docs/old.md       # all chunks from a file
+ragstore delete /data/docs/archive/     # all chunks under a directory
 ```
 
 ### `stats`
 
-Affiche les statistiques de l'index.
+Display index statistics.
 
 ```bash
 ragstore stats
@@ -140,111 +140,111 @@ ragstore stats
 
 ### `interactive`
 
-Lit des commandes depuis stdin, une par ligne. Pratique pour envoyer plusieurs requêtes en batch sans relancer le binaire.
+Read commands from stdin, one per line. Useful for sending multiple queries in batch without restarting the binary.
 
 ```bash
-echo "search apprentissage automatique --top 3" | ragstore interactive
+echo "search machine learning supervised --top 3" | ragstore interactive
 ```
 
 ---
 
 ## Configuration
 
-| Variable d'environnement | Défaut | Description |
+| Environment variable | Default | Description |
 |---|---|---|
-| `RAG_DB` | `./rag.db.json` | Chemin vers le fichier d'index |
+| `RAG_DB` | `./rag.db.json` | Path to the index file |
 
-L'index est un fichier JSON auto-suffisant. Plusieurs index peuvent coexister en pointant `RAG_DB` vers des chemins différents.
+The index is a self-contained JSON file. Multiple indexes can coexist by pointing `RAG_DB` to different paths.
 
 ---
 
-## Intégration dans un agent LLM
+## LLM agent integration
 
-`ragstore` est conçu pour être référencé dans un **skill** d'agent. Le workflow type :
+`ragstore` is designed to be referenced as an agent **skill**. The typical workflow:
 
-1. L'agent reçoit une question de l'utilisateur
-2. Il extrait 3 à 6 mots-clés représentatifs du topic
-3. Il appelle `ragstore search "<mots-clés>" --top 5`
-4. Il lit les champs `snippet` des résultats pour formuler sa réponse
-5. Si un snippet est insuffisant, il appelle `ragstore get <id>` pour le contenu complet
+1. The agent receives a question from the user
+2. It extracts 3–6 representative keywords from the topic
+3. It calls `ragstore search "<keywords>" --top 5`
+4. It reads the `snippet` fields from the results to formulate its answer
+5. If a snippet is insufficient, it calls `ragstore get <id>` for the full content
 
 ```
-User: "Quelle est notre politique de congés ?"
-Agent → ragstore search "politique congés jours RTT" --top 3
-Agent → lit les snippets → formule la réponse
+User:  "What is our vacation policy?"
+Agent → ragstore search "vacation policy days leave" --top 3
+Agent → reads snippets → formulates answer
 ```
 
-Le fichier `SKILL_ragstore.md` fourni dans ce dépôt décrit ce workflow en détail et peut être utilisé directement comme skill système.
+The `SKILL_ragstore.md` file in this repository describes this workflow in detail and can be used directly as a system skill.
 
-### Intégration container
+### Container integration
 
 ```dockerfile
 COPY ragstore /usr/local/bin/ragstore
 RUN chmod +x /usr/local/bin/ragstore
 ENV RAG_DB=/data/rag.db.json
 
-# Pré-indexer les documents à la construction de l'image
+# Pre-index documents at image build time
 RUN ragstore index /data/docs --chunk-size 250
 ```
 
 ---
 
-## Format de sortie
+## Output format
 
-Toutes les commandes retournent du JSON sur **stdout**. Les erreurs vont sur **stderr** avec un code de sortie 1.
+All commands return JSON to **stdout**. Errors go to **stderr** with exit code 1.
 
 ```json
-// Succès
+// Success
 { "ok": true, "message": "...", "data": { ... } }
 
-// Erreur
-{ "ok": false, "message": "description de l'erreur" }
+// Error
+{ "ok": false, "message": "error description" }
 ```
 
 ---
 
-## Compilation depuis les sources
+## Building from source
 
 ```bash
-# Prérequis : Go 1.22+
+# Prerequisites: Go 1.22+
 git clone https://github.com/your-org/ragstore
 cd ragstore
 
-# Build standard
+# Standard build
 go build -o ragstore .
 
-# Build optimisé (taille réduite, pas de debug symbols)
+# Optimized build (smaller size, no debug symbols)
 go build -o ragstore -ldflags="-s -w" .
 
-# Build statique (pour Alpine / containers minimaux)
+# Static build (for Alpine / minimal containers)
 CGO_ENABLED=0 GOOS=linux go build -o ragstore -ldflags="-s -w" .
 ```
 
-Le code ne dépend que de la bibliothèque standard Go. Aucun module externe requis.
+The code depends only on the Go standard library. No external modules required.
 
 ---
 
-## Algorithme
+## Algorithm
 
-**BM25 (Okapi BM25)** avec les paramètres classiques `k1=1.5`, `b=0.75`.
+**BM25 (Okapi BM25)** with standard parameters `k1=1.5`, `b=0.75`.
 
-Le scoring d'un document `d` pour une requête `q` :
+Scoring of a document `d` for a query `q`:
 
 $$\text{score}(d, q) = \sum_{t \in q} \text{IDF}(t) \cdot \frac{f(t,d) \cdot (k_1 + 1)}{f(t,d) + k_1 \left(1 - b + b \cdot \frac{|d|}{\text{avgdl}}\right)}$$
 
-Le tokenizer normalise en minuscules, supprime la ponctuation, et filtre une liste de stop-words multilingues. Il est agnostique à la langue et fonctionne aussi bien en français qu'en anglais ou en code source.
+The tokenizer lowercases text, strips punctuation, and filters a multilingual stop-word list. It is language-agnostic and works equally well on English, French, or source code.
 
 ---
 
-## Limites connues
+## Known limitations
 
-- **Pas de recherche sémantique** : BM25 ne comprend pas les synonymes ou la paraphrase. Compenser en élargissant la requête (ex. `"voiture automobile véhicule"`). Un agent LLM peut reformuler automatiquement si les premiers résultats sont insuffisants.
-- **PDF basique** : sans `pdftotext`, l'extraction PDF est limitée aux caractères ASCII imprimables. Installer `poppler-utils` pour une extraction correcte.
-- **Pas de mise à jour incrémentale** : modifier un fichier déjà indexé ne met pas à jour ses chunks. Faire `delete <path>` puis `index <path>` pour réindexer.
-- **Scalabilité** : l'index est chargé entièrement en mémoire. Adapté jusqu'à ~100k chunks (environ 500 Mo de texte brut). Au-delà, envisager Qdrant ou Elasticsearch.
+- **No semantic search**: BM25 does not understand synonyms or paraphrasing. Compensate by broadening the query (e.g. `"car automobile vehicle"`). An LLM agent can rephrase automatically if the first results are insufficient.
+- **Basic PDF support**: without `pdftotext`, PDF extraction is limited to printable ASCII characters. Install `poppler-utils` for proper extraction.
+- **No incremental updates**: modifying an already-indexed file does not update its chunks. Run `delete <path>` then `index <path>` to reindex.
+- **Scalability**: the index is loaded entirely into memory. Suitable for up to ~100k chunks (roughly 500 MB of raw text). Beyond that, consider Qdrant or Elasticsearch.
 
 ---
 
-## Licence
+## License
 
 MIT
