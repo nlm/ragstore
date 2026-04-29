@@ -77,6 +77,29 @@ Chunking splits text by **paragraphs** until the target word count is reached �
 | 200–300 | General Q&A *(recommended default)* |
 | 400–500 | Wide context, narrative documents |
 
+#### Excluding Files with `.ragignore`
+
+Place a `.ragignore` file in any directory to exclude files and directories from indexing. The syntax is compatible with `.gitignore`:
+
+```bash
+# .ragignore example
+node_modules/          # ignore directory
+*.log                  # ignore log files
+**/test*               # ignore test files anywhere
+build/                 # ignore build directory
+!important.log         # negation: don't ignore important.log
+# comment              # comments are ignored
+```
+
+**Pattern syntax:**
+- `*.ext` — match files by extension
+- `dirname/` — match directories only (trailing slash)
+- `**/pattern` — match anywhere in the directory tree
+- `!pattern` — negation (re-include previously excluded files)
+- `# comment` — comment lines
+
+Multiple `.ragignore` files can exist in subdirectories. Patterns accumulate hierarchically, and child `.ragignore` files can override parent patterns using negation (`!`).
+
 ### `search <query> [--top N]`
 
 Search the index and return the most relevant chunks, ranked by descending BM25 score.

@@ -17,6 +17,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
 )
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -60,6 +62,107 @@ type Response struct {
 	OK      bool        `json:"ok"`
 	Message string      `json:"message,omitempty"`
 	Data    interface{} `json:"data,omitempty"`
+}
+
+// ─── .ragignore Support ───────────────────────────────────────────────────────
+
+type IgnoreMatcher struct {
+	patterns []gitignore.Pattern
+	baseDir  string
+}
+
+func loadIgnoreFile(dir string) (*IgnoreMatcher, error) {
+	ignorePath := filepath.Join(dir, ".ragignore")
+	if _, err := os.Stat(ignorePath); os.IsNotExist(err) {
+		return nil, nil
+	}
+
+	data, err := os.ReadFile(ignorePath)
+	if err != nil {
+		return nil, fmt.Errorf("read .ragignore: %w", err)
+	}
+
+	lines := strings.Split(string(data), "\n")
+	patterns := make([]gitignore.Pattern, 0)
+
+	for lineNum, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		// Validate pattern syntax
+		if err := validatePattern(line, lineNum+1, ignorePath); err != nil {
+			return nil, err
+		}
+		patterns = append(patterns, gitignore.ParsePattern(line, nil))
+	}
+
+	return &IgnoreMatcher{
+		patterns: patterns,
+		baseDir:  dir,
+	}, nil
+}
+
+func validatePattern(pattern string, lineNum int, path string) error {
+	// Check for unbalanced brackets
+	openBrackets := strings.Count(pattern, "[")
+	closeBrackets := strings.Count(pattern, "]")
+	if openBrackets != closeBrackets {
+		return fmt.Errorf("line %d: unbalanced brackets in pattern '%s'", lineNum, pattern)
+	}
+	
+	// Check for unclosed bracket expressions
+	if openBrackets > 0 {
+		for i, ch := range pattern {
+			if ch == '[' {
+				closed := false
+				for j := i + 1; j < len(pattern); j++ {
+					if pattern[j] == ']' {
+						closed = true
+						break
+					}
+				}
+				if !closed {
+					return fmt.Errorf("line %d: unclosed bracket expression in pattern '%s'", lineNum, pattern)
+				}
+			}
+		}
+	}
+	
+	return nil
+}
+
+func (m *IgnoreMatcher) shouldIgnore(path string, isDir bool) bool {
+	if m == nil {
+		return false
+	}
+
+	relPath, err := filepath.Rel(m.baseDir, path)
+	if err != nil {
+		return false
+	}
+
+	matcher := gitignore.NewMatcher(m.patterns)
+	parts := strings.Split(relPath, string(filepath.Separator))
+	return matcher.Match(parts, isDir)
+}
+
+func mergeMatchers(parent, child *IgnoreMatcher) *IgnoreMatcher {
+	if parent == nil {
+		return child
+	}
+	if child == nil {
+		return parent
+	}
+
+	merged := make([]gitignore.Pattern, len(parent.patterns)+len(child.patterns))
+	copy(merged, parent.patterns)
+	copy(merged[len(parent.patterns):], child.patterns)
+
+	return &IgnoreMatcher{
+		patterns: merged,
+		baseDir:  child.baseDir,
+	}
 }
 
 // ─── Tokenizer ────────────────────────────────────────────────────────────────
@@ -318,6 +421,61 @@ func isTextFile(path string) bool {
 	return textExts[ext]
 }
 
+// ─── Directory Walk with .ragignore Support ───────────────────────────────────
+
+func walkWithIgnore(root string, matcher *IgnoreMatcher, fn func(string, os.FileInfo, *IgnoreMatcher) error) error {
+	info, err := os.Stat(root)
+	if err != nil {
+		return err
+	}
+
+	dirMatcher, err := loadIgnoreFile(root)
+	if err != nil {
+		return err
+	}
+	currentMatcher := mergeMatchers(matcher, dirMatcher)
+
+	if !info.IsDir() {
+		return fn(root, info, currentMatcher)
+	}
+
+	if currentMatcher.shouldIgnore(root, true) {
+		return filepath.SkipDir
+	}
+
+	if err := fn(root, info, currentMatcher); err != nil {
+		return err
+	}
+
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		path := filepath.Join(root, entry.Name())
+		entryInfo, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		if entryInfo.IsDir() {
+			if currentMatcher.shouldIgnore(path, true) {
+				continue
+			}
+			if err := walkWithIgnore(path, matcher, fn); err != nil {
+				return err
+			}
+		} else {
+			if err := fn(path, entryInfo, currentMatcher); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 // ─── Commands ─────────────────────────────────────────────────────────────────
 
 func cmdIndex(args []string, db string) {
@@ -355,14 +513,20 @@ func cmdIndex(args []string, db string) {
 	skipped := 0
 
 	for _, root := range paths {
-		err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return nil
-			}
+		rootMatcher, err := loadIgnoreFile(root)
+		if err != nil {
+			fatal("load .ragignore: " + err.Error())
+		}
+
+		err = walkWithIgnore(root, rootMatcher, func(path string, info os.FileInfo, matcher *IgnoreMatcher) error {
 			if info.IsDir() {
 				return nil
 			}
 			if !isTextFile(path) {
+				return nil
+			}
+
+			if matcher.shouldIgnore(path, false) {
 				return nil
 			}
 
@@ -630,6 +794,15 @@ COMMANDS:
   delete <id|path>                 Delete document(s) by ID or path prefix
   stats                            Show index statistics
   interactive                      Read commands from stdin line by line
+
+EXCLUSIONS:
+  Place a .ragignore file in any directory to exclude files/directories.
+  Uses gitignore pattern syntax:
+    - *.log           Match all .log files
+    - node_modules/   Match directory
+    - **/test*        Match anywhere in tree
+    - !pattern        Negate (don't ignore)
+    - # comment       Comment line
 
 ENV:
   RAG_DB   Path to the index file (default: ./rag.db.json)

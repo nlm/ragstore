@@ -20,6 +20,7 @@ RAG_DB=/data/rag.db.json ragstore index /path/to/docs --chunk-size 300
 - Supported formats: `.txt`, `.md`, `.rst`, `.json`, `.yaml`, `.csv`, `.py`, `.go`, `.js`, `.ts`, `.html`, `.pdf` (requires `pdftotext`), and most text files
 - `--chunk-size N`: target words per chunk (default: 300). Use 150-200 for precise retrieval, 400-500 for more context per result
 - Already-indexed files are skipped automatically (idempotent)
+- **Exclusions**: Place a `.ragignore` file in any directory to exclude files/directories (gitignore-compatible syntax)
 - Returns: `{ ok, message, data: { indexed, skipped, total_docs, db } }`
 
 ### Search by topic
@@ -85,6 +86,15 @@ Then answer using the snippet/content returned.
 
 When setting up for a new document collection:
 ```bash
+# Create .ragignore to exclude common directories
+cat > /data/docs/.ragignore << EOF
+node_modules/
+build/
+*.log
+.git/
+__pycache__/
+EOF
+
 # Index everything once
 RAG_DB=/data/rag.db.json ragstore index /data/documents --chunk-size 250
 
@@ -100,6 +110,7 @@ To add new documents later, just run `index` again — already-indexed files are
 
 - **chunk-size 200-300** works best for most Q&A use cases
 - **chunk-size 100-150** for dense technical docs where precision matters
+- **Use `.ragignore`** to exclude `node_modules/`, `build/`, `*.log`, and other non-essential files
 - The index file (`rag.db.json`) persists between sessions — no need to re-index
 - Multiple indexes can coexist by using different `RAG_DB` paths
 - BM25 scoring is language-agnostic — works equally well in French, English, or mixed content
